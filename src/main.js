@@ -22,9 +22,11 @@ async function setupApp() {
   if (!app) return;
 
   const hash = window.location.hash;
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  const isAdmin = hash === '#admin' || hash === '#/admin' || path === '/admin';
 
-  // 1. Admin Route: #admin or #/admin
-  if (hash === '#admin' || hash === '#/admin') {
+  // 1. Admin Route: /admin or #admin
+  if (isAdmin) {
     let session = null;
     if (supabase) {
       try {
@@ -262,15 +264,20 @@ styleSheet.textContent = `
 `;
 document.head.appendChild(styleSheet);
 
-// Hash routing listener
+// Routing listeners
 window.addEventListener('hashchange', () => {
+  setupApp();
+});
+window.addEventListener('popstate', () => {
   setupApp();
 });
 
 // Supabase auth state change listener
 if (supabase) {
-  supabase.auth.onAuthStateChange((event) => {
-    if (window.location.hash === '#admin' || window.location.hash === '#/admin') {
+  supabase.auth.onAuthStateChange(() => {
+    const hash = window.location.hash;
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (hash === '#admin' || hash === '#/admin' || path === '/admin') {
       setupApp();
     }
   });

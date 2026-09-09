@@ -80,6 +80,10 @@ export function attachAdminLoginHandlers(onSuccess) {
     backBtn.addEventListener('click', (e) => {
       e.preventDefault();
       window.location.hash = '';
+      if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
     });
   }
 

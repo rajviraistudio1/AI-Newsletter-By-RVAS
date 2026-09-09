@@ -231,6 +231,10 @@ export async function attachAdminDashboardHandlers() {
   if (backBtn) {
     backBtn.addEventListener('click', () => {
       window.location.hash = '';
+      if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
     });
   }
 
@@ -240,6 +244,9 @@ export async function attachAdminDashboardHandlers() {
         await supabase.auth.signOut();
       }
       window.location.hash = '';
+      if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
+        window.history.pushState({}, '', '/');
+      }
       window.location.reload();
     });
   }
