@@ -1,6 +1,7 @@
 import './styles/variables.css';
 import './styles/base.css';
 import './styles/components.css';
+import './styles/admin.css';
 
 import { renderNavbar } from './components/Navbar.js';
 import { renderHero } from './components/Hero.js';
@@ -10,12 +11,45 @@ import { renderHowItWorks } from './components/HowItWorks.js';
 import { renderFinalCta } from './components/FinalCta.js';
 import { renderFooter } from './components/Footer.js';
 import { newsletterService } from './services/newsletterService.js';
+import { renderAdminDashboard, attachAdminDashboardHandlers } from './components/AdminDashboard.js';
+import { renderAdminLogin, attachAdminLoginHandlers } from './components/AdminLogin.js';
+import { supabase } from './services/supabaseClient.js';
 
-function setupApp() {
+const THEME_KEY = 'rajvir_ai_theme';
+
+async function setupApp() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  // Render Single Page Structure
+  const hash = window.location.hash;
+
+  // 1. Admin Route: #admin or #/admin
+  if (hash === '#admin' || hash === '#/admin') {
+    let session = null;
+    if (supabase) {
+      try {
+        const { data } = await supabase.auth.getSession();
+        session = data?.session;
+      } catch (e) {
+        console.error('Error reading Supabase auth session:', e);
+      }
+    }
+
+    if (session) {
+      // Authenticated: Render Admin Dashboard
+      app.innerHTML = renderAdminDashboard();
+      await attachAdminDashboardHandlers();
+    } else {
+      // Unauthenticated: Render Admin Login Gate
+      app.innerHTML = renderAdminLogin();
+      attachAdminLoginHandlers(async () => {
+        await setupApp();
+      });
+    }
+    return;
+  }
+
+  // 2. Public Landing Page Route
   app.innerHTML = `
     <div class="bg-decorations">
       <div class="bg-grid"></div>
@@ -44,8 +78,6 @@ function setupApp() {
   attachFormHandler('final-form', 'final-email', 'final-btn', 'final-feedback');
   attachPlaceholderHandlers();
 }
-
-const THEME_KEY = 'rajvir_ai_theme';
 
 /**
  * Initializes and manages light/dark mode switching with persistence
@@ -77,7 +109,6 @@ function applyTheme(theme) {
       toggleBtn.setAttribute('aria-label', 'Switch to dark mode');
     }
     if (toggleIcon) {
-      // Moon icon: signifies clicking will switch back to dark mode
       toggleIcon.innerHTML = `
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
@@ -91,7 +122,6 @@ function applyTheme(theme) {
       toggleBtn.setAttribute('aria-label', 'Switch to light mode');
     }
     if (toggleIcon) {
-      // Sun icon: signifies clicking will switch to light mode
       toggleIcon.innerHTML = `
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4"></circle>
@@ -108,7 +138,6 @@ function applyTheme(theme) {
     }
   }
 }
-
 
 /**
  * Adds background glass styling when scrolling past header threshold
@@ -144,7 +173,6 @@ function attachFormHandler(formId, inputId, btnId, feedbackId) {
     feedback.className = 'form-feedback';
     feedback.textContent = '';
 
-    // Quick client-side check
     if (!email) {
       feedback.classList.add('error');
       feedback.textContent = 'Please provide your email address.';
@@ -159,7 +187,6 @@ function attachFormHandler(formId, inputId, btnId, feedbackId) {
       return;
     }
 
-    // Set Loading State
     const originalBtnHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = `
@@ -173,7 +200,6 @@ function attachFormHandler(formId, inputId, btnId, feedbackId) {
       const result = await newsletterService.subscribe(email);
 
       if (result.success) {
-        // Replace form or display sleek success box
         const formContainer = form.parentElement;
         formContainer.innerHTML = `
           <div class="subscription-success-box">
@@ -202,7 +228,6 @@ function attachFormHandler(formId, inputId, btnId, feedbackId) {
     }
   });
 
-  // Clear error message when user starts typing
   input.addEventListener('input', () => {
     if (feedback.classList.contains('error')) {
       feedback.textContent = '';
@@ -236,6 +261,20 @@ styleSheet.textContent = `
   }
 `;
 document.head.appendChild(styleSheet);
+
+// Hash routing listener
+window.addEventListener('hashchange', () => {
+  setupApp();
+});
+
+// Supabase auth state change listener
+if (supabase) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (window.location.hash === '#admin' || window.location.hash === '#/admin') {
+      setupApp();
+    }
+  });
+}
 
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', setupApp);
