@@ -1,13 +1,14 @@
 /**
  * Newsletter Service
  * 
- * Provides an abstraction for handling newsletter subscriptions.
- * Currently uses client-side persistence (localStorage) with simulated latency.
- * Designed to easily switch to a backend API, Supabase, Firebase, or serverless function
- * in future phases without altering any UI components.
+ * Centralized service for newsletter subscription handling.
+ * Integrates directly with Supabase PostgreSQL database while
+ * enforcing duplicate handling, client validation, and zero secret leakage.
  */
 
-const STORAGE_KEY = 'rajvir_newsletter_subscribers';
+import { supabase, isSupabaseConfigured } from './supabaseClient.js';
+
+const LOCAL_STORAGE_KEY = 'rajvir_newsletter_subscribers';
 
 export const newsletterService = {
   /**
@@ -21,25 +22,9 @@ export const newsletterService = {
   },
 
   /**
-   * Fetch all local subscribers (for demonstration and persistence check).
-   * @returns {Array<{email: string, subscribedAt: string}>}
-   */
-  getSubscribers() {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  },
-
-  /**
    * Subscribe an email address to the newsletter.
-   * In a future step, replace the body of this method with:
-   *   return await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ email }) })
-   * 
    * @param {string} rawEmail 
-   * @returns {Promise<{success: boolean, message: string, subscriber?: object}>}
+   * @returns {Promise<{success: boolean, alreadySubscribed?: boolean, message: string, subscriber?: object}>}
    */
   async subscribe(rawEmail) {
     const email = String(rawEmail || '').trim().toLowerCase();
@@ -59,45 +44,90 @@ export const newsletterService = {
       };
     }
 
-    // 2. Simulate realistic network latency for sleek UX
+    // 2. Real Supabase Database Flow
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('newsletter_subscribers')
+          .insert([{ email }]);
+
+        if (error) {
+          // Postgres code 23505 is unique_violation (duplicate email)
+          if (error.code === '23505' || error.message?.toLowerCase().includes('unique') || error.message?.toLowerCase().includes('duplicate')) {
+            return {
+              success: true,
+              alreadySubscribed: true,
+              message: "You're already on the list! Keep an eye on your inbox for the next drop."
+            };
+          }
+
+          console.error('Supabase subscription error:', error);
+          return {
+            success: false,
+            message: 'Unable to save subscription right now. Please try again in a moment.'
+          };
+        }
+
+        const newSubscriber = { email, subscribedAt: new Date().toISOString() };
+
+        // Dispatch standard event for app components to react to
+        window.dispatchEvent(new CustomEvent('newsletter:subscribed', {
+          detail: newSubscriber
+        }));
+
+        return {
+          success: true,
+          alreadySubscribed: false,
+          message: "Welcome to Raj Vir AI Studio! You're officially on the insider list.",
+          subscriber: newSubscriber
+        };
+      } catch (networkErr) {
+        console.error('Network failure connecting to Supabase:', networkErr);
+        return {
+          success: false,
+          message: 'Connection failed. Please check your internet connection and try again.'
+        };
+      }
+    }
+
+    // 3. Fallback to local simulation if Supabase is not yet configured with keys
+    console.warn('Supabase credentials not detected in .env.local. Falling back to local storage preview.');
     await new Promise((resolve) => setTimeout(resolve, 600));
 
-    // 3. Mock database persistence check
-    const subscribers = this.getSubscribers();
-    const existing = subscribers.find((sub) => sub.email === email);
+    try {
+      const rawLocal = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const subscribers = rawLocal ? JSON.parse(rawLocal) : [];
+      const existing = subscribers.find((sub) => sub.email === email);
 
-    if (existing) {
+      if (existing) {
+        return {
+          success: true,
+          alreadySubscribed: true,
+          message: "You're already on the list! Keep an eye on your inbox for the next drop.",
+          subscriber: existing
+        };
+      }
+
+      const newSubscriber = { email, subscribedAt: new Date().toISOString() };
+      subscribers.push(newSubscriber);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(subscribers));
+
+      window.dispatchEvent(new CustomEvent('newsletter:subscribed', {
+        detail: newSubscriber
+      }));
+
       return {
         success: true,
-        alreadySubscribed: true,
-        message: "You're already on the list! Keep an eye on your inbox for the next drop.",
-        subscriber: existing
+        alreadySubscribed: false,
+        message: "Welcome to Raj Vir AI Studio! You're officially on the insider list.",
+        subscriber: newSubscriber
+      };
+    } catch {
+      return {
+        success: true,
+        alreadySubscribed: false,
+        message: "Welcome to Raj Vir AI Studio! You're officially on the insider list."
       };
     }
-
-    // 4. Save subscriber
-    const newSubscriber = {
-      email,
-      subscribedAt: new Date().toISOString()
-    };
-
-    subscribers.push(newSubscriber);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(subscribers));
-    } catch (e) {
-      console.warn('Could not save to localStorage:', e);
-    }
-
-    // 5. Dispatch standard event for app components to react to
-    window.dispatchEvent(new CustomEvent('newsletter:subscribed', {
-      detail: newSubscriber
-    }));
-
-    return {
-      success: true,
-      alreadySubscribed: false,
-      message: "Welcome to Raj Vir AI Studio! You're officially on the insider list.",
-      subscriber: newSubscriber
-    };
   }
 };
